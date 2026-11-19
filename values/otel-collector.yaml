@@ -1,0 +1,29 @@
+mode: deployment
+image: { repository: otel/opentelemetry-collector-contrib }
+config:
+  receivers: { otlp: { protocols: { grpc: {}, http: {} } } }
+  processors:
+    memory_limiter: { check_interval: 1s, limit_mib: 256 }
+    batch: {}
+    transform/lab:
+      error_mode: ignore
+      trace_statements: [{ context: span, statements: ['set(attributes["lab.ottl"], "processed")'] }]
+      log_statements: [{ context: log, statements: ['set(attributes["lab.ottl"], "processed")'] }]
+      metric_statements: [{ context: datapoint, statements: ['set(attributes["lab.ottl"], "processed")'] }]
+  exporters:
+    debug: {}
+    otlphttp/tempo:
+      endpoint: http://tempo:4318
+    prometheusremotewrite/mimir:
+      endpoint: http://mimir-gateway/api/v1/push
+      headers: { X-Scope-OrgID: lab }
+  service:
+    pipelines:
+      traces: { receivers: [otlp], processors: [memory_limiter, transform/lab, batch], exporters: [debug, otlphttp/tempo] }
+      # Also scrape the Collector's own Prometheus telemetry. This gives the
+      # lab a small, continuous metric stream before any test app sends OTLP.
+      metrics: { receivers: [otlp, prometheus], processors: [memory_limiter, transform/lab, batch], exporters: [debug, prometheusremotewrite/mimir] }
+      logs: { receivers: [otlp], processors: [memory_limiter, transform/lab, batch], exporters: [debug] }
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { memory: 512Mi }

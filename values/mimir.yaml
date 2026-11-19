@@ -1,0 +1,51 @@
+# Single-node learning configuration. It intentionally removes HA, caches, and
+# the bundled MinIO, but keeps Mimir's Kafka ingest-storage architecture.
+rollout_operator: { enabled: false }
+minio: { enabled: false }
+kafka:
+  enabled: true
+  persistence: { enabled: false }
+  resources:
+    requests: { cpu: 250m, memory: 768Mi }
+    limits: { cpu: "1", memory: 1536Mi }
+mimir:
+  structuredConfig:
+    ingest_storage: { kafka: { auto_create_topic_default_partitions: 1 } }
+    blocks_storage:
+      backend: s3
+      s3:
+        endpoint: rustfs.ate-system.svc:9000
+        bucket_name: mimir-tsdb
+        insecure: true
+    ruler_storage:
+      backend: s3
+      s3:
+        endpoint: rustfs.ate-system.svc:9000
+        bucket_name: mimir-ruler
+        insecure: true
+    alertmanager_storage:
+      backend: s3
+      s3:
+        endpoint: rustfs.ate-system.svc:9000
+        bucket_name: mimir-alertmanager
+        insecure: true
+alertmanager:
+  replicas: 1
+  persistentVolume: { enabled: false }
+compactor:
+  replicas: 1
+  persistentVolume: { enabled: false }
+distributor: { replicas: 1 }
+ingester:
+  replicas: 1
+  zoneAwareReplication: { enabled: false }
+  persistentVolume: { enabled: false }
+querier: { replicas: 1 }
+query_frontend: { replicas: 1 }
+query_scheduler: { replicas: 1 }
+store_gateway:
+  replicas: 1
+  zoneAwareReplication: { enabled: false }
+  persistentVolume: { enabled: false }
+gateway: { replicas: 1 }
+overrides_exporter: { enabled: false }

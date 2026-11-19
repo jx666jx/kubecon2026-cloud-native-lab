@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rustfs-volume-permissions
+  namespace: ate-system
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: fix-permissions
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - chmod -R 0777 /data
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          hostPath:
+            # This is the path behind local-static-rustfs-pv. Preparing it
+            # before the Helm release lets RustFS start on the first install.
+            path: /var/local/k8s-storage-rustfs
+            type: DirectoryOrCreate

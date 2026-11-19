@@ -1,0 +1,21 @@
+ateApi:
+  authorization:
+    bootstrapOwners:
+    - spiffe://cluster.local/ns/kagent/sa/kagent-controller
+    - system:serviceaccount:ate-system:ate-client
+atelet:
+  enabled: false
+atenetRouter:
+  ingressAllowedSPIFFEIDs:
+  - spiffe://cluster.local/ns/kagent/sa/kagent-controller
+credentialProvider:
+  namespacePolicies:
+  - allowedNamespaces:
+    - kagent
+    atespace: kagent
+postgres:
+  clientCertificates:
+    enabled: true
+preview:
+- PerTemplateSnapshotLocation
+- GoldenEgressPolicy

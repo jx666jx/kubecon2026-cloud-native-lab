@@ -1,0 +1,23 @@
+persistence: { enabled: false }
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { memory: 512Mi }
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Mimir
+        type: prometheus
+        # Mimir's nginx gateway exposes its Prometheus-compatible API below
+        # this path; querying the gateway root returns nginx 404.
+        url: http://mimir-gateway/prometheus
+        jsonData: { httpHeaderName1: X-Scope-OrgID }
+        secureJsonData: { httpHeaderValue1: lab }
+      - name: Loki
+        type: loki
+        # Loki's single-binary Service exposes its HTTP API on 3100, not 80.
+        url: http://loki:3100
+      - name: Tempo
+        type: tempo
+        # Tempo's query/API endpoint is on its metrics/API port, 3200.
+        url: http://tempo:3200

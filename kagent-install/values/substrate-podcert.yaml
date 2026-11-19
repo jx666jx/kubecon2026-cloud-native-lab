@@ -1,0 +1,3 @@
+postgresClients:
+- kagent/kagent-controller=kagent_owner_user
+- kagent/kagent-controller=kagent_readwrite_user

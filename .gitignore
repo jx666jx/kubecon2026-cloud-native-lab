@@ -1,0 +1,4 @@
+.env
+tools/kubectl-ate
+.DS_Store
+.run/

@@ -1,0 +1,51 @@
+{
+  "connection":  {
+    "apiUrl":  "http://localhost:8083",
+    "gatewayUrl":  "http://localhost:8083",
+    "namespace":  "kagent",
+    "userId":  "admin@kagent.dev",
+    "timeout":  "300s"
+  },
+  "output":  {
+    "format":  "table"
+  },
+  "logging":  {
+    "level":  "info"
+  },
+  "install":  {
+    "defaultModelProvider":  "OpenAI",
+    "kagent":  {
+      "repository":  "oci://ghcr.io/kagent-dev/kagent/helm/",
+      "version":  "1.0.1"
+    },
+    "substrate":  {
+      "repository":  "oci://ghcr.io/kagent-dev/substrate/helm/",
+      "version":  "1.0.1",
+      "valuesFiles":  [
+        "kagent-install/values/substrate.yaml"
+      ]
+    },
+    "podCertificate":  {
+      "repository":  "oci://ghcr.io/kagent-dev/substrate/helm/",
+      "version":  "1.0.1"
+    },
+    "bundledPostgresImage":  "postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
+    "atelet":  {
+      "repository":  "oci://ghcr.io/kagent-dev/substrate/helm/",
+      "version":  "1.0.1"
+    }
+  },
+  "database":  {
+    "pool":  {
+      "maxConns":  10,
+      "maxConnIdleTime":  "1800s",
+      "maxConnLifetime":  "3600s"
+    },
+    "schema":  "kagent",
+    "vectorSchema":  "extensions"
+  },
+  "tui":  {
+    "sidebar":  "shown",
+    "bell":  true
+  }
+}
