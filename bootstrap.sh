@@ -18,9 +18,8 @@ done
 
 # 1. Recreate the single-node Kubernetes cluster. This intentionally removes
 #    any prior ephemeral lab state.
-echo '==>'
+echo '######################'
 echo '==> 1/6: Creating the Kubernetes cluster'
-echo '==>'
 "$ROOT/access.sh" stop >/dev/null 2>&1 || true
 container cluster delete --name "$CLUSTER_NAME" >/dev/null 2>&1 || true
 container cluster create --name "$CLUSTER_NAME" --cpus "$CLUSTER_CPUS" --memory "$CLUSTER_MEMORY" --node-image "$KUBERNETES_NODE_IMAGE"
@@ -28,18 +27,16 @@ kubectl config use-context "$CLUSTER_NAME" >/dev/null
 kubectl wait --for=condition=Ready node --all --timeout=5m
 
 # 2. Create the statically provisioned local volumes and all target namespaces.
-echo '==>'
+echo '######################'
 echo '==> 2/6: Creating local storage and namespaces'
-echo '==>'
 kubectl apply -f "$ROOT/manifests/00-local-storage.yaml"
 for namespace in coder ate-system kagent monitoring; do
   kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f -
 done
 
 # 3. Install Coder and its small in-cluster PostgreSQL database.
-echo '==>'
+echo '######################'
 echo '==> 3/6: Installing Coder and PostgreSQL'
-echo '==>'
 CODER_DB_PASSWORD=${CODER_DB_PASSWORD:-$(openssl rand -base64 32 | tr -d '\n' | tr '/+' '_-')}
 kubectl -n coder create secret generic coder-postgres-auth --from-literal=password="$CODER_DB_PASSWORD" --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n coder create secret generic coder-db-url --from-literal=url="postgres://coder:${CODER_DB_PASSWORD}@coder-postgres.coder.svc:5432/coder?sslmode=disable" --dry-run=client -o yaml | kubectl apply -f -
@@ -49,9 +46,8 @@ helm upgrade --install coder oci://ghcr.io/coder/chart/coder --version 2.38.6 --
 
 # 4. Install kagent/Substrate. It also installs RustFS, which is the shared
 #    S3-compatible object store for kagent and the observability stack.
-echo '==>'
+echo '######################'
 echo '==> 4/6: Installing kagent, Substrate, and RustFS'
-echo '==>'
 export OPENAI_API_KEY RUSTFS_ACCESS_KEY RUSTFS_SECRET_KEY
 (cd "$ROOT/kagent-install" && ./install.sh)
 kubectl -n ate-system delete job mimir-rustfs-buckets --ignore-not-found
@@ -61,10 +57,10 @@ kubectl -n ate-system wait --for=condition=complete job/mimir-rustfs-buckets --t
 # 5. Install Mimir (including its single Kafka broker) using RustFS storage.
 #    Credentials are supplied from temporary files so they do not appear in
 #    the process list or Helm command output.
-echo '==>'
+echo '######################'
 echo '==> 5/6: Installing Mimir and Kafka'
-echo '==>'
 helm repo add grafana https://grafana.github.io/helm-charts >/dev/null 2>&1 || true
+helm repo add grafana-community https://grafana-community.github.io/helm-charts >/dev/null 2>&1 || true
 helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts >/dev/null 2>&1 || true
 helm repo update >/dev/null
 mimir_secret_dir=$(mktemp -d)
@@ -74,15 +70,16 @@ printf '%s' "$RUSTFS_SECRET_KEY" > "$mimir_secret_dir/secret-key"
 helm upgrade --install mimir grafana/mimir-distributed --version 6.2.2 --namespace monitoring --create-namespace --wait --timeout 15m -f "$ROOT/values/mimir.yaml" --set-file mimir.structuredConfig.blocks_storage.s3.access_key_id="$mimir_secret_dir/access-key" --set-file mimir.structuredConfig.blocks_storage.s3.secret_access_key="$mimir_secret_dir/secret-key" --set-file mimir.structuredConfig.ruler_storage.s3.access_key_id="$mimir_secret_dir/access-key" --set-file mimir.structuredConfig.ruler_storage.s3.secret_access_key="$mimir_secret_dir/secret-key" --set-file mimir.structuredConfig.alertmanager_storage.s3.access_key_id="$mimir_secret_dir/access-key" --set-file mimir.structuredConfig.alertmanager_storage.s3.secret_access_key="$mimir_secret_dir/secret-key"
 rm -rf "$mimir_secret_dir"
 trap - EXIT
-# 6. Finish the LGTM stack and expose OTLP ingestion for OTel/OTTL testing.
-echo '==>'
-echo '==> 6/6: Installing Loki, Tempo, Grafana, and the OTel Collector'
-echo '==>'
-helm upgrade --install loki grafana/loki --version 7.6.0 --namespace monitoring --wait --timeout 10m -f "$ROOT/values/loki.yaml"
-helm upgrade --install tempo grafana/tempo --version 1.24.4 --namespace monitoring --wait --timeout 10m -f "$ROOT/values/tempo.yaml"
-helm upgrade --install grafana grafana/grafana --version 10.5.15 --namespace monitoring --wait --timeout 10m -f "$ROOT/values/grafana.yaml"
-helm upgrade --install otel open-telemetry/opentelemetry-collector --version 0.179.1 --namespace monitoring --wait --timeout 10m -f "$ROOT/values/otel-collector.yaml"
 
+# 6. Finish the LGTM stack and expose OTLP ingestion for OTel/OTTL testing.
+echo '######################'
+echo '==> 6/6: Installing Loki, Tempo, Grafana, and the OTel Collector'
+helm upgrade --install loki grafana-community/loki --version 21.4.3 --namespace monitoring --wait --timeout 10m -f "$ROOT/values/loki.yaml"
+helm upgrade --install tempo grafana-community/tempo --version 3.2.1 --namespace monitoring --wait --timeout 10m -f "$ROOT/values/tempo.yaml"
+helm upgrade --install grafana grafana-community/grafana --version 14.5.0 --namespace monitoring --wait --timeout 10m -f "$ROOT/values/grafana.yaml"
+helm upgrade --install otel open-telemetry/opentelemetry-collector --version 0.182.0 --namespace monitoring --wait --timeout 10m -f "$ROOT/values/otel-collector.yaml"
+
+echo '######################'
 echo "Lab is ready in context: $CLUSTER_NAME"
 kubectl get pods -A
 "$ROOT/access.sh" start
