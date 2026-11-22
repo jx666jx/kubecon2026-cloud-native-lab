@@ -1,4 +1,4 @@
-# KubeCon 2026 
+# KubeCon 2026
 
 KubeCon 2026 North America gave me quite a few things to try for myself.
 
@@ -6,24 +6,24 @@ Apple Container's local Kubernetes clusters, `kagent`, `Coder`, and OpenTelemetr
 
 This repository is all that: a local Kubernetes environment on macOS that brings together kagent, Coder, and an LGTM stack—a place to try each of them while experimenting with OTTL transformations and traces in a realistic telemetry pipeline.
 
-The cluster is deliberately ephemeral. Apple Container clusters are not
-reliably restartable after sleep, logout, reboot, or a Container service
-restart: their control-plane address can change and leave the kubeconfig stale.
-Apple tracks the missing restart lifecycle in
-[apple/container#2440](https://github.com/apple/container/issues/2440).
-Nothing in this repository relies on resuming a stopped cluster; rerun the
-bootstrap script to delete the old cluster and build a fresh lab.
+The cluster is currently ephemeral because Apple Container clusters are not reliably restartable after sleep, logout, reboot, or a Container service restart: their control-plane address can change and leave the kubeconfig stale.
+The original control-plane IP-rotation failure is documented in [apple/container#2156](https://github.com/apple/container/issues/2156), and [apple/container#2440](https://github.com/apple/container/issues/2440) tracks the missing cluster stop/start lifecycle.
+Nothing in this repository relies on resuming a stopped cluster; rerun the bootstrap script to delete the old cluster and build a fresh lab.
 
 ## Quick start
 
-Prerequisites:
+### Prerequisites
 
-- Apple Container with the Kubernetes plugin
-- `kubectl`, Helm, OpenSSL, `jq`, and the `kagent` CLI
-- 24 GB host RAM; the default cluster allocation is 6 CPU and 20 GiB RAM
-- an OpenAI API key for kagent
+- Install Apple Container, helm, jq, kagent, kubectl and openssl:
 
-Create a local credential file from the example:
+```sh
+brew install container helm jq kagent kubectl openssl
+```
+
+- **24 GB of host RAM** — the default cluster uses 6 CPUs and 20 GiB of memory.
+- **An OpenAI API key** — required by `kagent`.
+
+Create and update a local credential file from the example:
 
 ```sh
 cp .env.example .env
@@ -41,12 +41,22 @@ To explicitly remove the lab:
 ./destroy.sh
 ```
 
+If Apple Container is not running, start it before bootstrapping:
+
+```sh
+container system start
+```
+
+If bootstrap fails at any point, correct the reported problem and rerun it. It
+stops the local forwards, deletes the named cluster, and starts the lab again
+from a clean state.
+
 The cluster is pinned to `docker.io/kindest/node:v1.37.0`.
 Substrate uses Kubernetes PodCertificateRequest and ClusterTrustBundle APIs to
 issue workload identities and distribute their trust roots. Kubernetes v1.37
 makes both APIs stable and enabled by default; earlier versions require beta-API
-and feature-gate setup. The digest also makes each ephemeral rebuild
-reproducible. Use `CLUSTER_NAME`,
+and feature-gate setup. The digest pins the Kubernetes cluster node image. Use
+`CLUSTER_NAME`,
 `CLUSTER_CPUS`, `CLUSTER_MEMORY`, or `KUBERNETES_NODE_IMAGE` to override the
 defaults for a run. For example: `CLUSTER_MEMORY=18g ./bootstrap.sh`.
 
@@ -54,9 +64,10 @@ defaults for a run. For example: `CLUSTER_MEMORY=18g ./bootstrap.sh`.
 
 `bootstrap.sh` is the source of truth. Every run deletes and recreates the
 named cluster, then installs applications in this order: **Coder → kagent →
-the LGTM stack**. 
+the LGTM stack**.
 
 The full sequence is:
+
 1. **Kubernetes:** creates the single-node `kubecon-lab` Apple Container
    cluster at Kubernetes v1.37.0.
 2. **Storage and namespaces:** applies
@@ -67,11 +78,10 @@ The full sequence is:
    [10-coder-postgres.yaml](manifests/10-coder-postgres.yaml).
 4. **Coder:** installs the Coder Helm release using
    [values/coder.yaml](values/coder.yaml).
-5. **kagent:** prepares the root-owned RustFS hostPath, then uses the
-   `kagent` CLI to run the pinned installer. That installer creates its
-   development PostgreSQL and identity material, installs the
-   kagent/Substrate CRDs and runtime services (including Atelet and RustFS),
-   then installs kagent.
+5. **kagent:** prepares RustFS storage permissions, then runs the pinned
+   installer to create its development PostgreSQL and identity material,
+   deploy the kagent/Substrate runtime (including Atelet and RustFS), and
+   install kagent.
 6. **LGTM prerequisite — Mimir object-store buckets:** creates the dedicated Mimir buckets in the
    RustFS instance via
    [20-mimir-rustfs-buckets.yaml](manifests/20-mimir-rustfs-buckets.yaml).
@@ -85,10 +95,6 @@ The full sequence is:
 11. **LGTM — OpenTelemetry Collector:** installs OTLP gRPC/HTTP ingestion, the OTTL
     transform processor, Mimir remote-write metrics export, and Tempo trace
     export.
-
-This order is required: Coder needs its database first; Mimir needs RustFS and
-its buckets; and Grafana is configured only after all three backends exist.
-RustFS's hostPath must be made writable before its non-root pod starts.
 
 ## Components
 
@@ -162,8 +168,45 @@ OTLP/gRPC and port `4318` for OTLP/HTTP. Metrics are written to Mimir under
 tenant `lab`; the `X-Scope-OrgID: lab` header is already configured in Grafana.
 
 To experiment with OTTL, edit `transform/lab` in
-[values/otel-collector.yaml](values/otel-collector.yaml) and re-run the OTel
-Collector Helm command from `bootstrap.sh`, or rerun the complete bootstrap.
+[values/otel-collector.yaml](values/otel-collector.yaml), then update only the
+Collector with:
+
+```sh
+helm upgrade --install otel open-telemetry/opentelemetry-collector \
+  --version 0.182.0 --namespace monitoring --wait --timeout 10m \
+  -f values/otel-collector.yaml
+```
+
+Alternatively, run `./bootstrap.sh` to rebuild the entire lab.
+
+### Send a first trace
+
+With the local forwards running, the following sends one OTLP/HTTP trace through
+the Collector. It adds the `lab.ottl=processed` attribute defined by the sample
+transformation.
+
+```sh
+curl -sS http://localhost:4318/v1/traces \
+  -H 'Content-Type: application/json' \
+  --data '{
+    "resourceSpans": [{
+      "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "readme-demo"}}]},
+      "scopeSpans": [{"spans": [{
+        "traceId": "5b8efff798038103d269b633813fc60c",
+        "spanId": "eee19b7ec3c1b174",
+        "name": "readme-demo",
+        "kind": 1,
+        "startTimeUnixNano": "1763654400000000000",
+        "endTimeUnixNano": "1763654401000000000"
+      }]}]
+    }]
+  }'
+```
+
+Open Grafana Explore with the Tempo data source and search for trace ID
+`5b8efff798038103d269b633813fc60c`. The span should include
+`lab.ottl=processed`; Collector debug output is also available from the log
+command above.
 
 ## Data and resource expectations
 
@@ -173,8 +216,9 @@ recreated. Loki, Tempo, Kafka, and Grafana are configured without persistence.
 
 RustFS runs as non-root, while the Apple Container `hostPath` backing its PVC is
 initially root-owned. The installer runs the scoped `rustfs-volume-permissions`
-Job between Substrate's initial resource creation and its readiness wait. Its
-world-writable mode is appropriate only for this disposable local lab.
+Job before installing Substrate so the RustFS pod can write to the volume on
+its first start. Its world-writable mode is appropriate only for this disposable
+local lab.
 
 The Mimir topology is intentionally not production-like for reliability:
 replication, zone awareness, caches, durable Kafka storage, and autoscaling are

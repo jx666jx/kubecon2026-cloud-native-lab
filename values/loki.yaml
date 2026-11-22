@@ -12,12 +12,6 @@ loki:
 singleBinary:
   replicas: 1
   persistence: { enabled: false }
-  extraVolumes:
-    - name: loki-data
-      emptyDir: {}
-  extraVolumeMounts:
-    - name: loki-data
-      mountPath: /var/loki
   resources:
     requests: { cpu: 100m, memory: 256Mi }
     limits: { memory: 768Mi }
@@ -27,4 +21,5 @@ write: { replicas: 0 }
 gateway: { enabled: false }
 chunksCache: { enabled: false }
 resultsCache: { enabled: false }
-minio: { enabled: false }
+lokiCanary: { enabled: false }
+test: { enabled: false }

@@ -2,18 +2,18 @@
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 : "${OPENAI_API_KEY:?Set OPENAI_API_KEY before running this script}"
 : "${RUSTFS_ACCESS_KEY:?Set RUSTFS_ACCESS_KEY before running this script}"
 : "${RUSTFS_SECRET_KEY:?Set RUSTFS_SECRET_KEY before running this script}"
 command -v kagent >/dev/null || { echo "Missing required command: kagent" >&2; exit 1; }
 command -v jq >/dev/null || { echo "Missing required command: jq" >&2; exit 1; }
+command -v kubectl >/dev/null || { echo "Missing required command: kubectl" >&2; exit 1; }
 
 # Apple Container creates this hostPath as root. RustFS runs unprivileged, so
 # fix the backing directory before kagent's supported installer creates its PVC.
 echo "Preparing permissions on the local RustFS volume..."
 kubectl -n ate-system delete job rustfs-volume-permissions --ignore-not-found --wait=true
-kubectl apply -f "$repo_root/manifests/rustfs-volume-permissions.yaml"
+kubectl apply -f "$script_dir/manifests/rustfs-volume-permissions.yaml"
 kubectl -n ate-system wait --for=condition=complete job/rustfs-volume-permissions --timeout=5m
 
 # Unlike the dry-run Helm export, this creates the bundled development
